@@ -1,0 +1,143 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "User Profile",
+      "description": "Stores user-specific settings and profile information.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "categories": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of expense categories (e.g., Food, Transport)."
+        },
+        "paymentMethods": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of payment methods."
+        },
+        "baseCurrency": { "type": "string", "description": "The user's home currency (e.g., CZK)." },
+        "theme": { "type": "string" },
+        "stayLoggedIn": { "type": "boolean" }
+      },
+      "required": ["uid", "email"]
+    },
+    "Trip": {
+      "title": "Trip",
+      "description": "Represents a vacation or trip.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "name": { "type": "string" },
+        "currency": { "type": "string", "description": "The local currency of the trip destination." },
+        "startDate": { "type": "string", "format": "date-time" },
+        "endDate": { "type": "string", "format": "date-time" },
+        "lastRate": { "type": "number", "description": "The last used exchange rate for this trip." },
+        "duration": { "type": "number", "description": "Number of days." },
+        "adults": { "type": "number", "description": "Number of adults." },
+        "children": { "type": "number", "description": "Number of children." },
+        "collaborators": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "List of user IDs who can edit the trip."
+        }
+      },
+      "required": ["id", "ownerId", "name", "currency"]
+    },
+    "Expense": {
+      "title": "Expense",
+      "description": "An individual expense record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "tripId": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "amount": { "type": "number" },
+        "currency": { "type": "string" },
+        "recipient": { "type": "string" },
+        "description": { "type": "string" },
+        "category": { "type": "string" },
+        "paymentMethod": { "type": "string", "enum": ["CASH", "KARTA"] },
+        "rate": { "type": "number" },
+        "amountInBase": { "type": "number", "description": "Amount converted to base currency." }
+      },
+      "required": ["id", "tripId", "ownerId", "date", "amount", "currency", "category", "paymentMethod"]
+    },
+    "Withdrawal": {
+      "title": "Withdrawal",
+      "description": "An ATM withdrawal record.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "tripId": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "amount": { "type": "number", "description": "Amount in local currency." },
+        "costInBase": { "type": "number", "description": "Cost in base currency (from bank)." },
+        "rate": { "type": "number", "description": "Calculated rate (costInBase / amount)." },
+        "location": { "type": "string" }
+      },
+      "required": ["id", "tripId", "ownerId", "date", "amount", "costInBase"]
+    },
+    "Invitation": {
+      "title": "Invitation",
+      "description": "A pending invitation to join a trip.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "tripId": { "type": "string" },
+        "tripName": { "type": "string" },
+        "inviterId": { "type": "string" },
+        "inviterName": { "type": "string" },
+        "inviteeId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "declined"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "tripId", "inviterId", "inviteeId", "status"]
+    },
+    "Person": {
+      "title": "Person",
+      "description": "Represents a person added by a user in local or registered form.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "age": { "type": "number" }
+      },
+      "required": ["ownerId", "name", "age"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "UserProfile",
+      "description": "User profiles and settings."
+    },
+    "/trips/{tripId}": {
+      "schema": "Trip",
+      "description": "Trips created by users."
+    },
+    "/expenses/{expenseId}": {
+      "schema": "Expense",
+      "description": "Expenses linked to trips."
+    },
+    "/withdrawals/{withdrawalId}": {
+      "schema": "Withdrawal",
+      "description": "Withdrawals linked to trips."
+    },
+    "/invitations/{invitationId}": {
+      "schema": "Invitation",
+      "description": "Pending invitations."
+    },
+    "/people/{personId}": {
+      "schema": "Person",
+      "description": "People saved by users."
+    }
+  }
+}

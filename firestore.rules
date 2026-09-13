@@ -1,0 +1,182 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.ownerId;
+    }
+
+    function isTripCollaborator(tripId) {
+      return isAuthenticated() && 
+             exists(/databases/$(database)/documents/trips/$(tripId)) && (
+               get(/databases/$(database)/documents/trips/$(tripId)).data.ownerId == request.auth.uid || 
+               (get(/databases/$(database)/documents/trips/$(tripId)).data.collaborators != null && 
+                request.auth.uid in get(/databases/$(database)/documents/trips/$(tripId)).data.collaborators)
+             );
+    }
+
+    function isUserDocOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Validation Helpers
+    function isValidString(val, min, max) {
+      return val is string && val.size() >= min && val.size() <= max;
+    }
+
+    function isValidNumber(val) {
+      return (val is int || val is float) && val >= 0;
+    }
+
+    // Domain Validators
+    function isValidUserProfile(data) {
+      // Relaxed validation for initial creation and updates
+      return ('uid' in data && data.uid == request.auth.uid) &&
+             ('email' in data && data.email is string) &&
+             ('categories' in data && data.categories is list) &&
+             ('baseCurrency' in data && data.baseCurrency is string);
+    }
+
+    function isValidTrip(data, isUpdate) {
+      return ('ownerId' in data && ((isUpdate && data.ownerId == resource.data.ownerId) || (!isUpdate && data.ownerId == request.auth.uid))) &&
+             ('name' in data && isValidString(data.name, 1, 100)) &&
+             ('currency' in data && isValidString(data.currency, 1, 10)) &&
+             ('startDate' in data && isValidString(data.startDate, 1, 50)) &&
+             (!('lastRate' in data) || data.lastRate == null || (data.lastRate is int || data.lastRate is float)) &&
+             (!('collaborators' in data) || data.collaborators == null || data.collaborators is list) &&
+             (!('people' in data) || data.people == null || data.people is list) &&
+             (!('duration' in data) || data.duration == null || (data.duration is int || data.duration is float)) &&
+             (!('adults' in data) || data.adults == null || (data.adults is int || data.adults is float)) &&
+             (!('children' in data) || data.children == null || (data.children is int || data.children is float)) &&
+             (!('includeSelf' in data) || data.includeSelf == null || data.includeSelf is bool) &&
+             (!('archived' in data) || data.archived == null || data.archived is bool) &&
+             (!('endDate' in data) || data.endDate == null || (data.endDate is string && data.endDate.size() <= 100));
+    }
+
+    function isValidExpense(data) {
+      return ('tripId' in data && isValidString(data.tripId, 1, 100)) &&
+             ('ownerId' in data && data.ownerId == request.auth.uid) &&
+             ('amount' in data && isValidNumber(data.amount)) &&
+             ('currency' in data && isValidString(data.currency, 1, 10)) &&
+             ('category' in data && isValidString(data.category, 1, 100)) &&
+             ('paymentMethod' in data && isValidString(data.paymentMethod, 1, 100)) &&
+             ('rate' in data && isValidNumber(data.rate)) &&
+             ('amountInBase' in data && isValidNumber(data.amountInBase));
+    }
+
+    function isValidWithdrawal(data) {
+      return ('tripId' in data && isValidString(data.tripId, 1, 100)) &&
+             ('ownerId' in data && data.ownerId == request.auth.uid) &&
+             ('amount' in data && isValidNumber(data.amount)) &&
+             ('costInBase' in data && isValidNumber(data.costInBase)) &&
+             ('rate' in data && isValidNumber(data.rate));
+    }
+
+    function isValidInvitation(data) {
+      return ('tripId' in data && isValidString(data.tripId, 1, 100)) &&
+             ('tripName' in data && isValidString(data.tripName, 1, 100)) &&
+             ('inviterId' in data && data.inviterId == request.auth.uid) &&
+             ('inviterName' in data && isValidString(data.inviterName, 1, 100)) &&
+             ('status' in data && data.status == 'pending') &&
+             (!('createdAt' in data) || data.createdAt is string || data.createdAt is timestamp) &&
+             (!('inviteeId' in data) || data.inviteeId == null || isValidString(data.inviteeId, 1, 100)) &&
+             (!('inviteeEmail' in data) || data.inviteeEmail == null || isValidString(data.inviteeEmail, 3, 100));
+    }
+
+    function isValidPerson(data) {
+      return ('ownerId' in data && data.ownerId == request.auth.uid) &&
+             ('name' in data && isValidString(data.name, 1, 100)) &&
+             ('age' in data && isValidNumber(data.age)) &&
+             (!('email' in data) || data.email == null || data.email == "" || isValidString(data.email, 3, 100));
+    }
+
+    function isAdmin() {
+      let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
+      return isAuthenticated() && (
+        (exists(userPath) && get(userPath).data.role == 'admin') ||
+        (request.auth.token.email == "tpriklenk@gmail.com" && request.auth.token.email_verified == true)
+      );
+    }
+
+    // Rules
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    match /test/connection {
+      allow read: if true;
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated(); // Allow searching for users
+      allow create: if isUserDocOwner(userId) && isValidUserProfile(request.resource.data);
+      allow update: if isUserDocOwner(userId) && isValidUserProfile(request.resource.data);
+      allow delete: if isUserDocOwner(userId);
+    }
+
+    match /trips/{tripId} {
+      allow read: if isAuthenticated() && (request.auth.uid == resource.data.ownerId || (resource.data.collaborators != null && request.auth.uid in resource.data.collaborators));
+      allow create: if isAuthenticated() && isValidTrip(request.resource.data, false);
+      allow update: if isAuthenticated() && (
+        request.auth.uid == resource.data.ownerId || 
+        (resource.data.collaborators != null && request.auth.uid in resource.data.collaborators) ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['collaborators']) && request.auth.uid in request.resource.data.collaborators)
+      ) && isValidTrip(request.resource.data, true);
+      allow delete: if isDocOwner();
+    }
+
+    match /expenses/{expenseId} {
+      allow read: if isAuthenticated() && (
+        resource.data.ownerId == request.auth.uid || 
+        isTripCollaborator(resource.data.tripId)
+      );
+      allow create: if isAuthenticated() && isTripCollaborator(request.resource.data.tripId) && isValidExpense(request.resource.data);
+      allow update: if isAuthenticated() && (resource.data.ownerId == request.auth.uid || isTripCollaborator(resource.data.tripId)) && isValidExpense(request.resource.data);
+      allow delete: if isAuthenticated() && (resource.data.ownerId == request.auth.uid || isTripCollaborator(resource.data.tripId));
+    }
+
+    match /withdrawals/{withdrawalId} {
+      allow read: if isAuthenticated() && (
+        resource.data.ownerId == request.auth.uid || 
+        isTripCollaborator(resource.data.tripId)
+      );
+      allow create: if isAuthenticated() && isTripCollaborator(request.resource.data.tripId) && isValidWithdrawal(request.resource.data);
+      allow update: if isAuthenticated() && (resource.data.ownerId == request.auth.uid || isTripCollaborator(resource.data.tripId)) && isValidWithdrawal(request.resource.data);
+      allow delete: if isAuthenticated() && (resource.data.ownerId == request.auth.uid || isTripCollaborator(resource.data.tripId));
+    }
+
+    match /invitations/{invitationId} {
+      allow read: if isAuthenticated() && (
+        request.auth.uid == resource.data.inviteeId || 
+        request.auth.uid == resource.data.inviterId ||
+        (resource.data.inviteeEmail != null && request.auth.token.email.lower() == resource.data.inviteeEmail.lower())
+      );
+      allow create: if isAuthenticated() && isValidInvitation(request.resource.data);
+      allow update: if isAuthenticated() && (
+        request.auth.uid == resource.data.inviteeId || 
+        request.auth.uid == resource.data.inviterId ||
+        (resource.data.inviteeEmail != null && request.auth.token.email.lower() == resource.data.inviteeEmail.lower())
+      );
+      allow delete: if isAuthenticated() && (
+        request.auth.uid == resource.data.inviteeId || 
+        request.auth.uid == resource.data.inviterId ||
+        (resource.data.inviteeEmail != null && request.auth.token.email.lower() == resource.data.inviteeEmail.lower())
+      );
+    }
+
+    match /people/{personId} {
+      allow read: if isAuthenticated() && resource.data.ownerId == request.auth.uid;
+      allow create: if isAuthenticated() && isValidPerson(request.resource.data);
+      allow update: if isAuthenticated() && resource.data.ownerId == request.auth.uid && isValidPerson(request.resource.data);
+      allow delete: if isAuthenticated() && resource.data.ownerId == request.auth.uid;
+    }
+  }
+}
